@@ -1,0 +1,39 @@
+============================================================
+  F1 TYRE DEGRADATION MODEL
+  Multi-Track | Multi-Year | XGBoost + Polynomial
+============================================================
+
+Loading 10 race sessions...
+
+  Loading 2024 Bahrain... ✓ 1129 laps
+  Loading 2024 Spain... ✓ 1310 laps
+  Loading 2024 Silverstone... ✓ 960 laps
+  Loading 2024 Hungary... ✓ 1355 laps
+  Loading 2024 Monaco... ✓ 1237 laps
+  Loading 2025 Bahrain... ✓ 1128 laps
+  Loading 2025 Spain... ✓ 1203 laps
+  Loading 2025 Silverstone... ✓ 825 laps
+  Loading 2025 Hungary... ✓ 1368 laps
+  Loading 2025 Monaco... ✓ 1425 laps
+
+Total raw laps: 11940
+
+--- Feature Engineering ---
+  Clean laps for modelling : 10384
+  Features                 : ['TyreLife', 'CompoundCode', 'StintNumber', 'LapNumber', 'RaceCode', 'DegCode', 'CleanAir']
+  Target                   : FuelCorrectedDelta (fuel-corrected lap time delta from race median)
+  Compounds                : ['SOFT' 'HARD' 'MEDIUM']
+  Tracks                   : ['Bahrain' 'Spain' 'Silverstone' 'Hungary' 'Monaco']
+
+--- Baseline Models ---
+Compound      Linear RMSE    Poly-2 RMSE    Poly-3 RMSE
+-------------------------------------------------------
+SOFT               6.5896         6.5686         6.5681
+MEDIUM             4.3751         4.3711         4.3348
+HARD               4.2291         4.2206         4.1621
+
+--- XGBoost Global Model ---
+  CV RMSE : 1.8367 ± 0.1873 seconds
+  CV R²   : 0.8560 ± 0.0227
+Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
+Backend qtagg is interactive backend. Turning interactive mode on.
