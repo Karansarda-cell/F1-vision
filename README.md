@@ -1,161 +1,125 @@
-# F1 Race Replay 🏎️ 🏁
+# F1 Vision
 
-A Python application for visualizing Formula 1 race telemetry and replaying race events with interactive controls and a graphical interface.
+A race-engineering analytics platform built on [FastF1](https://github.com/theOehrly/Fast-F1) — combining a real-time race replay visualizer with a machine-learning tyre degradation model and Bayesian in-race tyre health tracking.
+
+Forked from [IAmTomShaw/f1-race-replay](https://github.com/IAmTomShaw/f1-race-replay), extended with a tyre degradation modelling pipeline and a Bayesian tyre-health integration layer.
 
 ![Race Replay Preview](./resources/preview.png)
 
-> **HUGE NEWS:** The telemetry stream feature is now in a usable state. See the [telemetry demo documentation](./telemetry.md) for access instructions, data format details, and usage ideas.
+## What this project does
 
-## Features
+1. **Race Replay** — Watch any F1 race (2018–present) unfold visually: real driver positions on the track, live leaderboard, tyre compounds, safety car deployment, pit stops.
+2. **Tyre Degradation Model** — A machine learning pipeline trained on 10 real race sessions (2024–2025, 5 circuits) that predicts lap time delta from tyre age, compound, and track, using fuel-corrected lap times to isolate the tyre effect.
+3. **Bayesian Tyre Health Tracking** — A Kalman-filter-based model that tracks tyre health lap-by-lap during a session, producing live health % and uncertainty estimates.
 
-- **Race Replay Visualization:** Watch the race unfold with real-time driver positions on a rendered track.
-- **Safety Car Visualization:** See the Safety Car deploy from pit lane, lead the field, and return to pits — with animated transitions and pulsing glow effects.
-- **Insights Menu:** Floating menu for quick access to telemetry analysis tools (launches automatically with replay).
-- **Leaderboard:** See live driver positions and current tyre compounds.
-- **Lap & Time Display:** Track the current lap and total race time.
-- **Driver Status:** Drivers who retire or go out are marked as "OUT" on the leaderboard.
-- **Interactive Controls:** Pause, rewind, fast forward, and adjust playback speed using on-screen buttons or keyboard shortcuts.
-- **Legend:** On-screen legend explains all controls.
-- **Driver Telemetry Insights:** View speed, gear, DRS status, and current lap for selected drivers when selected on the leaderboard.
+## Tyre Degradation Model — Results
 
-## Controls
+**Data:** 10 race sessions across 2024–2025 (Bahrain, Spain, Silverstone, Hungary, Monaco), chosen to span high, medium, and low tyre degradation circuits.
+
+- Total raw laps: 11,940
+- Clean laps used for modelling: 10,384 (after filtering safety car laps, pit laps, and outliers)
+- Features: tyre age, compound, stint number, lap number, track, degradation category, clean-air flag
+- Target: fuel-corrected lap time delta from race median (isolates tyre effect from fuel burn-off)
+
+**Baseline models (Linear / Polynomial regression, per compound):**
+
+| Compound | Linear RMSE | Poly-2 RMSE | Poly-3 RMSE |
+|----------|------------:|------------:|------------:|
+| SOFT     | 6.59s       | 6.57s       | 6.57s       |
+| MEDIUM   | 4.38s       | 4.37s       | 4.33s       |
+| HARD     | 4.23s       | 4.22s       | 4.16s       |
+
+**XGBoost global model (5-fold cross-validation):**
+
+- **CV RMSE: 1.84 ± 0.19 seconds**
+- **CV R²: 0.856 ± 0.023**
+- **~72% reduction in RMSE vs. the best baseline** — the model explains 85.6% of variance in fuel-corrected lap time delta using tyre age, compound, and track context.
+
+> Per-compound and per-track degradation slopes, plus feature importance rankings, are in progress — see [Known Issues](#known-issues) below.
+
+### Why this is a meaningful result
+
+Baseline per-compound regression treats tyre degradation as one fixed curve, but real degradation depends heavily on track (Monaco has near-zero degradation; Bahrain is severe). The high baseline RMSE — especially 6.6s for SOFT — reflects this: a single curve averaged across very different physical regimes fits none of them well. XGBoost, given track and stint context as features, cuts that error by roughly 72%, showing the model is learning genuine track-dependent degradation behaviour rather than fitting noise.
+
+## Setup
+
+```bash
+git clone https://github.com/Karansarda-cell/F1-vision.git
+cd F1-vision
+python3.11 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Running the Race Replay
+
+```bash
+# GUI menu — select year + round from interface
+python main.py
+
+# CLI menu
+python main.py --cli
+
+# Direct — specify year and round
+python main.py --viewer --year 2025 --round 8
+
+# Qualifying replay
+python main.py --viewer --year 2025 --round 8 --qualifying
+```
+
+## Running the Tyre Degradation Model
+
+```bash
+python src/models/tyre_degradation_model.py
+```
+
+First run downloads and caches ~10 race sessions via FastF1 (takes several minutes). Subsequent runs use the local cache and are fast.
+
+## Controls (Race Replay)
 
 - **Pause/Resume:** SPACE or Pause button
-- **Rewind/Fast Forward:** ← / → or Rewind/Fast Forward buttons
-- **Playback Speed:** ↑ / ↓ or Speed button (cycles through 0.5x, 1x, 2x, 4x)
+- **Rewind/Fast Forward:** ← / → or buttons
+- **Playback Speed:** ↑ / ↓ or Speed button (0.5x, 1x, 2x, 4x)
 - **Set Speed Directly:** Keys 1–4
-- **Restart**: **R** to restart replay
-- **Toggle DRS Zone**: **D** to hide/show DRS Zone
-- **Toggle Progress Bar**: **B** to hide/show progress bar
-- **Toggle Driver Names**: **L** to hide/show driver names on track
-- **Select driver/drivers**: Click to select driver or shift click to select multiple drivers
+- **Restart:** R
+- **Toggle DRS Zone:** D
+- **Toggle Progress Bar:** B
+- **Toggle Driver Names:** L
+- **Select driver(s):** Click, or Shift+Click for multiple
 
-
-## Safety Car
-
-The replay includes a **simulated Safety Car** that appears on track whenever the F1 data indicates a Safety Car deployment (track status code `4`). Since the F1 API does not provide GPS telemetry for the actual Safety Car, its position is simulated based on the race leader's position.
-
-### How it works
-
-- **Data source:** The Safety Car deployment timing comes from the real F1 track status data via FastF1 (`session.track_status`).
-- **Position simulation:** The SC is placed ~500 meters ahead of the race leader on the track reference polyline. This approximates where the real SC would be relative to the field.
-- **Three animation phases:**
-  - **Deploying** — The SC animates from the pit lane onto the track over ~3 seconds, with a pulsing glow and "SC DEPLOYING" label.
-  - **On Track** — The SC drives ahead of the leader with a steady amber glow and "SC" label.
-  - **Returning** — The SC animates back to the pit lane over ~3 seconds, with a fading pulsing glow and "SC IN" label.
-- **Visual appearance:** The SC is drawn as a larger orange/amber circle (8px radius vs 6px for regular cars) with an orange outline ring and always-visible "SC" label.
-
-### Technical details
-
-The SC position computation happens in `_compute_safety_car_positions()` in `src/f1_data.py`. Each frame gets a `safety_car` field:
-
-```json
-{
-  "safety_car": {
-    "x": 1234.56,
-    "y": 7890.12,
-    "phase": "on_track",
-    "alpha": 1.0
-  }
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `x`, `y` | World coordinates of the SC |
-| `phase` | `"deploying"`, `"on_track"`, or `"returning"` |
-| `alpha` | Opacity value from `0.0` (invisible) to `1.0` (fully visible), used for fade in/out animation |
-
-> **Note:** If you have existing cached `.pkl` files from previous runs, you must re-run with `--refresh-data` to generate SC position data. Older cached files will simply show no Safety Car.
-
-## Qualifying Session Support (in development)
-
-Recently added support for Qualifying session replays with telemetry visualization including speed, gear, throttle, and brake over the lap distance. This feature is still being refined.
-
-## Requirements
-
-- Python 3.11+
-- [FastF1](https://github.com/theOehrly/Fast-F1)
-- [Arcade](https://api.arcade.academy/en/latest/)
-- numpy
-
+## Project Structure
 
 ```
-
-## File Structure
-
-```
-f1-race-replay/
-├── main.py                    # Entry point, handles session loading and starts the replay
-├── requirements.txt           # Python dependencies
-├── README.md                  # Project documentation
-├── roadmap.md                 # Planned features and project vision
-├── resources/
-│   └── preview.png           # Race replay preview image
+F1-vision/
+├── main.py                          # Entry point for race replay
+├── requirements.txt
+├── README.md
 ├── src/
-│   ├── f1_data.py            # Telemetry loading, processing, frame generation & SC position simulation
-│   ├── arcade_replay.py      # Visualization and UI logic
-│   └── ui_components.py      # UI components like buttons and leaderboard
+│   ├── f1_data.py                   # FastF1 data loading & processing
+│   ├── bayesian_tyre_model.py       # Kalman-filter tyre health model
+│   ├── tyre_degradation_integration.py
+│   ├── f1_tyre_integration.py       # Column-mapping layer: FastF1 → Bayesian model
+│   ├── models/
+│   │   └── tyre_degradation_model.py # XGBoost + polynomial degradation model
 │   ├── interfaces/
-│   │   └── qualifying.py     # Qualifying session interface and telemetry visualization
-│   │   └── race_replay.py    # Race replay interface, SC rendering & telemetry visualization
-│   └── lib/
-│       └── tyres.py          # Type definitions for telemetry data structures
-│       └── time.py           # Time formatting utilities
-└── .fastf1-cache/            # FastF1 cache folder (created automatically upon first run)
-└── computed_data/            # Computed telemetry data (created automatically upon first run)
+│   │   ├── race_replay.py           # Main race replay renderer
+│   │   └── qualifying.py            # Qualifying session replay
+│   ├── gui/, cli/, services/, insights/, lib/
+├── outputs/                          # Generated plots & CSVs (gitignored data, committed results)
+└── resources/
 ```
 
-## Building Custom Telemetry Windows
+## Known Issues
 
-When you start a race replay, an **Insights Menu** automatically appears, providing quick access to various telemetry analysis tools. You can easily create custom insight windows that receive live telemetry data using the `PitWallWindow` base class:
+- **Race leaderboard accuracy:** Inaccurate for the first few corners and briefly during pit stops, due to known telemetry position inaccuracies. Being improved in stages.
+- **Tyre degradation model — per-track slope table:** The script currently errors when computing per-track feature importance (`ValueError: Length of values (8) does not match length of index (7)`), likely due to an XGBoost categorical-column auto-encoding mismatch. Global CV results (RMSE/R²) are unaffected and reported above. Fix in progress.
 
-```python
-from src.gui.pit_wall_window import PitWallWindow
+## Roadmap
 
-class MyInsightWindow(PitWallWindow):
-    def setup_ui(self):
-        # Create your custom UI
-        pass
-    
-    def on_telemetry_data(self, data):
-        # Process telemetry data
-        pass
-```
+- Sector time overlay (live delta to personal/session best, colour-coded like official F1 timing)
+- Chase/drone camera modes for the replay
+- Per-track degradation slope breakdown once the feature importance bug is resolved
 
-The `PitWallWindow` base class handles all telemetry stream connection logic automatically, allowing you to focus solely on your window's functionality.
+## Credits
 
-**Key Features:**
-- Automatic connection to telemetry stream
-- Built-in status bar with connection state
-- Proper cleanup on window close
-- Simple API - just implement `setup_ui()` and `on_telemetry_data()`
-
-**Documentation & Examples:**
-- See [docs/PitWallWindow.md](./docs/PitWallWindow.md) for complete guide
-- See [docs/InsightsMenu.md](./docs/InsightsMenu.md) for adding insights to the menu
-- Run the example: `python -m src.gui.example_pit_wall_window`
-- Test the menu: `python -m src.gui.insights_menu`
-
-## Customization
-
-- Change track width, colors, and UI layout in `src/arcade_replay.py`.
-- Adjust telemetry processing in `src/f1_data.py`.
-- Create custom telemetry windows using `PitWallWindow` base class (see above).
-
-## Contributing
-
-There have been several contributions from the community that have helped enhance this project. I have added a [contributors.md](./contributors.md) file to acknowledge those who have contributed features and improvements.
-
-If you would like to contribute, feel free to:
-
-- Open pull requests for UI improvements or new features.
-- Report issues on GitHub.
-
-Please see [roadmap.md](./roadmap.md) for planned features and project vision.
-
-# Known Issues
-
-- The leaderboard appears to be inaccurate for the first few corners of the race. The leaderboard is also temporarily affected by a driver going in the pits. At the end of the race, the leaderboard is sometimes affected by the drivers' final x,y positions being further ahead than other drivers. These are known issues caused by inaccuracies in the telemetry and are being worked on for future releases. It's likely that these issues will be fixed in stages as improving the leaderboard accuracy is a complex task.
-
-
+Built on [IAmTomShaw/f1-race-replay](https://github.com/IAmTomShaw/f1-race-replay). See [contributors.md](./contributors.md) for acknowledgements.
