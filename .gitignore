@@ -16,3 +16,8 @@ __pycache__/
 *.pyc
 .fastf1-cache/
 computed_data/
+venv/
+__pycache__/
+*.pyc
+.fastf1-cache/
+computed_data/
