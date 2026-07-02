@@ -11,4 +11,8 @@ __pycache__/
 computed_data/
 
 .DS_Store
-.idea
+.ideavenv/
+__pycache__/
+*.pyc
+.fastf1-cache/
+computed_data/
